@@ -1,0 +1,5 @@
+SpeechRecognition
+pydub
+logging
+pyTelegramBotAPI
+python-dotenv
