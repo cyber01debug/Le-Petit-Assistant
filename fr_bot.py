@@ -1,16 +1,14 @@
 # библиотека для  взаимодействия с операционной системой 
 import os 
-# библиотека для регулярных выражений
-import re 
 # библиотека Telegram Bot API
 import telebot
 from telebot import custom_filters
-# библиотека для распознования речи
-import speech_recognition as sr
 #  библиотека для вывода логов событий
 import logging
 # библиотека для работы с файлом .env в которой содержится TOKEN бота
 from dotenv import load_dotenv, dotenv_values
+# привящка файла с функциями
+import functions
 
 
 """Подключение логирования и загрузка данных из файла .env """
@@ -23,45 +21,6 @@ print(config.get('TOKEN'))
 bot = telebot.TeleBot(config.get('TOKEN'), parse_mode=None)
 
 
-
-def load_dictionary(filepath):
-    """Загружает словарь из файла fr_dict.txt, где каждая строка состоит из "слово | транскрипция" (IPA)"""
-    dictionary = {} #создаем словарь для хранения слова и его транскрипции 
-    with open(filepath, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip() #очистка от лишнего в начале и конце строки
-            if not line: #проверка на пустоту строки если такие есть пропускаем
-                continue
-            parts = line.split(' | ') #так как в нашем словаре разделитель " | " делим по нему на две части (слово транскрипция)
-            if len(parts) == 2:
-                word, transcription = parts
-                dictionary[word.strip()] = transcription.strip() #добавляем слово и его транскрипцию в словарь
-    return dictionary #возвращаем результат со словарём
-
-def audio_script(audio_file_path):
-    """Данная функция распознает аудио файл c помощью SpeechRecognotion и ранскрибирует его на французском языке"""
-    recognize = sr.Recognizer() #вводим переменуб с распознователем речи от Google
-    try:
-        with sr.AudioFile(audio_file_path) as source: #чтение аудио файла из сообщения
-            audio = recognize.record(source)
-        text = recognize.recognize_google(audio, language="fr-FR") #разпознаем речь указав язык распознования fr (французский)
-        return text #возвращаем транскрипт аудио файла 
-    except sr.UnknownValueError: #обработка ошибки 
-        logging.error(f"Не удалось распознать речь") #вывод лога ошибки с причиной
-        return "Не удалось распознать речь" #возвратное сообщение к пользователю 
-
-def g2p_dict(text, dictionary):
-    """Находит транскрипции для слов в тексте."""
-    words = re.findall(r'\b\w+\b', text) #регулярное выраженние для нахождения слов в получившемся транскрипте
-    transcriptions = [] #список для хранения транскрипций
-    for word in words:
-        if word in dictionary: #итерация с поиском подходящего слова в словаре 
-            transcriptions.append(f"{word}: {dictionary[word]}") #подобранная транскрипция добавляется в список вместе со словом
-    
-    formatted_transcriptions = "    ".join(transcriptions) 
-    logging.info(f"Найденные транскрипции:{formatted_transcriptions}")#вывод транскрипции в логи
-    return "\n".join(transcriptions) if transcriptions else "Транскрипция не найденена в словаре" #ответ пользователю если слово не нашли в словаре
-
 """Непосредственно блок с командами Telegram бота"""
 
 @bot.message_handler(commands=['start'])
@@ -71,14 +30,14 @@ def start_message(message):
     logging.info(f"Пользователь {message.from_user.username} активировал бота") #отслеживание запуска бота через логи
 
 
-@bot.message_handler(text=['Привет','Здравствуйте', 'привет','здравствуйте', 'ghbdtn', 'ПРИВЕТ', 'ЗДРАВСТВУЙТЕ', 'Bonjour', 'bonjour'])
+@bot.message_handler(func=lambda message: message.text and message.text.lower() in ['привет', 'здравствуйте', 'ghbdtn', 'bonjour']) #приведение к нижнему регистру входного сообщения пользователя
 def text_filter(message):
     """Функция приветсвия, которая реагирует на определенные текстовые сообщения с помощью фильтра"""
     bot.send_message(message.chat.id, "Bonjour, {name}!".format(name=message.from_user.first_name)) #отправление приветственного сообщения пользователю
     logging.info(f"Пользователь {message.from_user.username} поздоровался с ботом")
 
 
-@bot.message_handler(text=['пока','ПОКА', 'Пока','До свидания', 'до свидания', 'прощай', 'Прощай'])
+@bot.message_handler(func=lambda message: message.text and message.text.lower() in ['пока', 'прощай', 'до свидания', 'gjrf']) 
 def text_filter(message):
     """Функция прощания, которая реагирует на определенные текстовые сообщения с помощью фильтра"""
     bot.send_message(message.chat.id, "Au revoir, {name}, был рад помочь!".format(name=message.from_user.first_name)) #отправление завершительного сообщения пользователю
@@ -99,11 +58,11 @@ def handle_document(message):
             new_file.write(downloaded_file)
         logging.info(f"Бот получил аудиофайл: {input_audio_path}") #логирования об успешной обработке аудиофайла
 
-        transcribed_text = audio_script(input_audio_path) #вызов фунцкии транскрибирования
+        transcribed_text = functions.audio_script(input_audio_path) #вызов фунцкии транскрибирования
         logging.info(f"Транскрибированный текст: {transcribed_text}") #логирование результата
 
-        dictionary = load_dictionary('fr_dict.txt') #подгрузка относительного пути французского словаря 
-        transcriptions = g2p_dict(transcribed_text, dictionary) #вызов функции с транскрипуией IPA 
+        dictionary = functions.load_dictionary('fr_dict.txt') #подгрузка относительного пути французского словаря 
+        transcriptions = functions.g2p_dict(transcribed_text, dictionary) #вызов функции с транскрипуией IPA 
         inf = " ~ слово имеет несколько произношений" #примечания о возможном наличии нескольких транскрипций 
         response = f"Распознанный текст:\n {transcribed_text}\n\nТранскрипции:\n{transcriptions}\n\nПримечание: {inf}" #формирование конечного ответного сообщения пользователю, если всё прошло успешно (транскрипт и транскрипция файла WAV)
         
@@ -116,6 +75,7 @@ def handle_document(message):
         if os.path.exists(input_audio_path):
             os.remove(input_audio_path) #удаление временных файлов
         logging.info("Временные файлы удалены.")
+        
 
 bot.add_custom_filter(custom_filters.TextMatchFilter())
 bot.infinity_polling()
